@@ -27,7 +27,9 @@ var GoogleAuth = function(o) {
 		winTitle : (o.winTitle) ? o.winTitle : 'Google Account',
 		errorText : (o.errorText) ? o.errorText : 'Can not authorize user!',
 		winColor : (o.winColor) ? o.winColor : '#000',
-		quiet : ( typeof (o.quiet) === 'undefined') ? true : o.quiet
+		quiet : ( typeof (o.quiet) === 'undefined') ? true : o.quiet,
+		loginHint : o.loginHint,  //ends up as username in google login form
+		tokenUrl : 'https://www.googleapis.com/oauth2/v3/token'
 	};
 	var log = function() {
 	};
@@ -126,7 +128,7 @@ var GoogleAuth = function(o) {
 			c++;
 			var accessDenied = webview.evalJS('document.getElementById("access_denied").value;');
 			if (accessDenied != '') {
-				log.debug('GoogleAuth: Access denied!');
+				log.info('GoogleAuth: Access denied!');
 				Ti.App.Properties.setString(_opt.propertyName + '.accessToken', '');
 				Ti.App.Properties.setString(_opt.propertyName + '.refreshToken', '');
 				Ti.App.Properties.setString(_opt.propertyName + '.tokenType', '');
@@ -139,7 +141,7 @@ var GoogleAuth = function(o) {
 			}
 			var code = webview.evalJS('document.getElementById("code").value;');
 			if (code != '') {
-				log.debug('GoogleAuth: Access granted!');
+				log.info('GoogleAuth: Access granted!');
 				webview.hide();
 				spinner.show();
 				//log.info('Code: ' + code);
@@ -147,7 +149,7 @@ var GoogleAuth = function(o) {
 			}
 			if (c > 10) {
 				//some error (to many requests :) )
-				log.debug('GoogleAuth: To many redirects...');
+				log.info('GoogleAuth: To many redirects...');
 				win.close();
 			}
 		});
@@ -158,7 +160,7 @@ var GoogleAuth = function(o) {
 		cb = (cb) ? cb : function() {
 		};
 
-		log.debug('GoogleAuth: User logging out...');
+		log.info('GoogleAuth: User logging out...');
 		if (isAuthorized()) {
 			var logoutWin = Ti.UI.createWindow({
 				backgroundColor : 'white',
@@ -220,7 +222,7 @@ var GoogleAuth = function(o) {
 		var xhr = Ti.Network.createHTTPClient({
 			// function called when the response data is available
 			onload : function(e) {
-				//log.info("Received text: " + this.responseText);
+				log.debug("Received text: " + this.responseText);
 				var resp = JSON.parse(this.responseText);
 				resp.expires_in = parseFloat(resp.expires_in, 10) * 1000 + (new Date()).getTime();
 				Ti.App.Properties.setString(_opt.propertyName + '.accessToken', resp.access_token);
@@ -230,7 +232,6 @@ var GoogleAuth = function(o) {
 				_prop.tokenType = resp.token_type;
 				_prop.expiresIn = resp.expires_in;
 				log.debug(_prop);
-				//win.close();
 				cbSuccess();
 			},
 			// function called when an error occurs, including a timeout
@@ -243,14 +244,14 @@ var GoogleAuth = function(o) {
 					title : 'Error',
 					message : _opt.errorText
 				});
-				cbError();
+				
 				//authorize();
 
 			},
 			timeout : 5000 /* in milliseconds */
 		});
 		// Prepare the connection.
-		xhr.open("POST", _opt.url);
+		xhr.open("POST", _opt.tokenUrl);
 		xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
 		var d = {
 			client_id : _opt.clientId,
@@ -271,11 +272,10 @@ var GoogleAuth = function(o) {
 		var xhr = Ti.Network.createHTTPClient({
 			// function called when the response data is available
 			onload : function(e) {
-				//log.info("Received text: " + this.responseText);
+				log.debug("Received text: " + this.responseText);
 				var resp = JSON.parse(this.responseText);
-				log.info(resp.expires_in);
 				resp.expires_in = parseFloat(resp.expires_in, 10) * 1000 + (new Date()).getTime();
-				log.info(resp.expires_in);
+				log.info('Token expires at: ' + new Date(resp.expires_in));
 				Ti.App.Properties.setString(_opt.propertyName + '.accessToken', resp.access_token);
 				Ti.App.Properties.setString(_opt.propertyName + '.refreshToken', resp.refresh_token);
 				Ti.App.Properties.setString(_opt.propertyName + '.tokenType', resp.token_type);
@@ -292,8 +292,8 @@ var GoogleAuth = function(o) {
 			},
 			// function called when an error occurs, including a timeout
 			onerror : function(e) {
-				//log.info(e.error);
-				//log.info(e.responseText);
+				log.error(e.error);
+				log.error(e.responseText);
 				//TODO: show some error message
 				Titanium.UI.createAlertDialog({
 					title : 'Error',
@@ -304,7 +304,7 @@ var GoogleAuth = function(o) {
 			timeout : 5000 /* in milliseconds */
 		});
 		// Prepare the connection.
-		xhr.open("POST", 'https://accounts.google.com/o/oauth2/token');
+		xhr.open("POST", _opt.tokenUrl);
 		xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
 		var d = {
 			code : code,
@@ -327,6 +327,9 @@ var GoogleAuth = function(o) {
 			scope[i] = encodeURIComponent(_opt.scope[i]);
 		}
 		var url = _opt.url + '?' + 'approval_prompt=force&scope=' + scope.join('+') + '&' + 'redirect_uri=urn:ietf:wg:oauth:2.0:oob' + '&' + 'response_type=code' + '&' + 'client_id=' + _opt.clientId + '&' + 'btmpl=mobile' + '';
+		if (_opt.loginHint) {
+            url = url + '&' + 'login_hint=' + encodeURIComponent(_opt.loginHint);   
+        }
 		log.debug(url);
 		return url;
 	}
